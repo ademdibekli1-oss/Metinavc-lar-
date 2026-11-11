@@ -1567,3 +1567,237 @@ function horseUpdate(dt,moving){
 }
 {const _hu=heroUpdate;heroUpdate=function(dt,moving){_hu(dt,moving);horseUpdate(dt,moving);};}
 
+// ===== Kusursuz Kaçınma: kaçış sırasında gelen vuruş -> 4 sn %50 fazla hasar =====
+let perfectUntil=0;
+{const _dp=damagePlayer;damagePlayer=function(n,src){
+  if(player.alive&&player.dodging>0&&player.invuln>0){const now=performance.now();if(now>perfectUntil-3000){perfectUntil=now+4000;showDamage(player.group.position.clone().setY(2.4),'KUSURSUZ KAÇIŞ!','#6ff',true);spawnBurst(player.group.position.clone(),0x66ffff);sfx('level');}return;}
+  return _dp(n,src);};
+ const _hd=hitDamage;hitDamage=function(mul,crit){let r=_hd(mul,crit);if(performance.now()<perfectUntil)r=Math.round(r*1.5);return r;};}
+
+// ===== Gezgin Tüccar: ara sıra yakında belirir, kısa süre kalır =====
+let wand=null,wandNext=Date.now()+150000;
+function wanderSpawn(){
+  if(wand||!player.cls||!player.alive||dungeon||duel)return;
+  const pp=player.group.position,a=Math.random()*Math.PI*2,x=pp.x+Math.cos(a)*14,z=pp.z+Math.sin(a)*14;
+  const n={id:'wander',n:'Gezgin Tüccar',x,z,tint:0xc9902a,cls:'okcu',t:'wander',until:Date.now()+360000,stock:[]};
+  n.mesh=buildHuman(n.cls,false,{},n.tint);n.mesh.position.set(x,0,z);n.mesh.rotation.y=Math.atan2(pp.x-x,pp.z-z);scene.add(n.mesh);
+  n.label=makeLabel('💰 '+n.n,'npc');n.ob={x,z,r:.6};obstacles.push(n.ob);
+  for(let i=0;i<2;i++){const it=makeItem(player.level+2,3);n.stock.push({k:'item',it,p:Math.max(200,it.value*4)});}
+  n.stock.push({k:'bless',p:250},{k:'key',p:120},{k:'egg',p:900});
+  NPCS.push(n);wand=n;showMsg('💰 Gezgin Tüccar yakınında belirdi! (6 dk)');chat('Gezgin Tüccar yakınında bir yerde, haritada sarı nokta.','#fd6');sfx('level');
+}
+function wanderEnd(){if(!wand)return;const n=wand;wand=null;const i=NPCS.indexOf(n);if(i>=0)NPCS.splice(i,1);scene.remove(n.mesh);if(n.label&&n.label.remove)n.label.remove();const j=obstacles.indexOf(n.ob);if(j>=0)obstacles.splice(j,1);
+  if(npcCur===n)closePanels();wandNext=Date.now()+(600000+Math.random()*420000);}
+setInterval(()=>{if(wand){if(Date.now()>wand.until)wanderEnd();}else if(Date.now()>wandNext)wanderSpawn();},1500);
+{const _rn=renderNpc;renderNpc=function(){_rn();if(npcCur&&npcCur.t==='wander'){
+  let h='<div class="stat"><span>Nadir mallarım var, çabuk ol yolcu!</span></div>';
+  npcCur.stock.forEach((s,i)=>{const d=s.sold||player.yang<s.p;
+    if(s.k==='item')h+=itemRow(s.it,btn('wbuy',s.sold?'Satıldı':s.p+'💰','data-w="'+i+'"',d));
+    else{const nm=s.k==='bless'?'📖 Kutsama Kitabı':s.k==='key'?'🗝 Zindan Anahtarı':'🥚 Pet Yumurtası';h+='<div class="itemRow"><span class="name"><b>'+nm+'</b></span>'+btn('wbuy',s.sold?'Satıldı':s.p+'💰','data-w="'+i+'"',d)+'</div>';}});
+  $('npcBody').innerHTML=h;}};}
+document.body.addEventListener('click',e=>{const t=e.target.closest('[data-act="wbuy"]');if(!t||!wand)return;
+  const s=wand.stock[+t.dataset.w];if(!s||s.sold||player.yang<s.p)return;
+  if(s.k==='egg'){if(!hatchPet())return;}else if(s.k==='item'){if(!giveItem(s.it))return;}else if(s.k==='bless')player.scrolls.bless++;else player.keys++;
+  player.yang-=s.p;s.sold=true;sfx('buy');updateHUD();saveGame();renderNpc();});
+window.__wander={hit:n=>damagePlayer(n),spawn:wanderSpawn,end:wanderEnd,get npc(){return wand;},perfect:()=>perfectUntil};
+
+// ===== Krallık Baskını: köye saldırı =====
+let raid=null,raidNext=Date.now()+420000;
+function raidStart(){
+  if(raid||!player.cls||!player.alive||dungeon||duel)return false;
+  const pp=player.group.position;if(Math.hypot(pp.x,pp.z)>60)return false;
+  const my=player.kingdom,enemyK=KINGDOMS.find(k=>k.id!==my&&Math.random()<.6)||KINGDOMS.find(k=>k.id!==my);
+  const n=Math.min(14,5+Math.floor(player.level/4)),a0=Math.random()*Math.PI*2,list=[];
+  for(let i=0;i<n;i++){const a=a0+(Math.random()-.5)*1.2,r=44+Math.random()*4,pos={x:Math.cos(a)*r,y:0,z:Math.sin(a)*r};
+    const e=new Enemy(pos,i%4===0?'orcw':'orc',Math.max(1,player.level),{dg:true});e.provoked=true;e.state='chase';e.name=enemyK.n+' Akıncısı';enemies.push(e);list.push(e);}
+  raid={list,until:Date.now()+100000,k:enemyK};
+  showMsg('⚔ '+enemyK.n+' köyünüze saldırıyor!');chat('BASKIN! '+enemyK.n+' akıncıları köyü basıyor — savun!','#f66');sfx('die');vib([80,60,80]);
+  return true;
+}
+function raidEnd(win){
+  if(!raid)return;const r=raid;raid=null;raidNext=Date.now()+(780000+Math.random()*600000);
+  if(win){const pp=player.group.position.clone(),y=300+player.level*60;player.yang+=y;gainXP(Math.round(player.level*40+100));dropItem(pp,2,player.level+2);
+    showMsg('🏆 Baskın püskürtüldü! +'+y+' Yang');chat('Köyü savundun! Ödüller alındı.','#8f8');sfx('quest');player.stats.raids=(player.stats.raids||0)+1;updateHUD();saveGame();}
+  else{r.list.forEach(e=>{if(!e.dead)e.remove();});showMsg('Akıncılar geri çekildi.');}
+}
+setInterval(()=>{if(raid){if(!raid.list.some(e=>!e.dead))raidEnd(true);else if(Date.now()>raid.until||dungeon||!player.alive&&false)raidEnd(false);}
+  else if(Date.now()>raidNext&&!raidStart())raidNext=Date.now()+60000;},1500);
+window.__raid={start:raidStart,end:raidEnd,get cur(){return raid;}};
+
+// ===== Yoldaş: Şaman — +%15 hasar, 8 sn'de bir %4 can yeniler =====
+let comp={own:false,mesh:null,t:0};
+try{comp.own=localStorage.getItem('m2_comp')==='1';}catch(e){}
+SHOP.push({id:'comp',n:'Şaman Yoldaş',d:'Seni takip eder: +%15 hasar, can yeniler (bir kez)',p:2500,i:'🧙'});
+function compMesh(){if(comp.mesh||!player.cls)return;comp.mesh=buildHuman('saman',false,{},0x3a8a6a);comp.mesh.position.copy(player.group.position);scene.add(comp.mesh);}
+{const _b=buy;buy=function(id){if(id==='comp'){if(comp.own){showMsg('Yoldaşın zaten var.');return;}const s=SHOP.find(x=>x.id==='comp');if(player.yang<s.p)return;player.yang-=s.p;comp.own=true;try{localStorage.setItem('m2_comp','1');}catch(e){}compMesh();sfx('buy');showMsg('🧙 Şaman yoldaşın artık seninle!');updateHUD();saveGame();renderNpc();return;}return _b(id);};}
+{const _hd2=hitDamage;hitDamage=function(m,c){const r=_hd2(m,c);return comp.own?Math.round(r*1.15):r;};}
+setInterval(()=>{if(comp.own&&player.alive&&player.cls&&player.hp<player.maxHp&&!dungeon&&!duel||comp.own&&player.alive&&player.cls&&player.hp<player.maxHp){player.hp=Math.min(player.maxHp,player.hp+player.maxHp*.04);updateHUD();}},8000);
+{const _ru=update;update=function(dt){_ru(dt);if(!comp.own||!player.cls)return;compMesh();const m=comp.mesh,pp=player.group.position,a=player.group.rotation.y+2.5,tx=pp.x+Math.sin(a)*2,tz=pp.z+Math.cos(a)*2,k=Math.min(1,dt*4);
+  const d=Math.hypot(tx-m.position.x,tz-m.position.z);if(d>20)m.position.set(tx,0,tz);else{m.position.x+=(tx-m.position.x)*k;m.position.z+=(tz-m.position.z)*k;}
+  m.rotation.y=Math.atan2(pp.x-m.position.x,pp.z-m.position.z);m.visible=!dungeon;};}
+window.__comp=comp;
+
+// ===== g9: Biyolog, Ruh Taşı, Alt Sınıf, Kombo, Şifacı Ork, KS Rakip, Şeytan Kulesi =====
+const META=()=>player.stats.meta||(player.stats.meta={bio:{st:0,have:0},sub:null,stones:{crit:0,atk:0,def:0,hp:0}});
+const STONES={crit:{n:'Öldürücü Darbe Taşı',i:'🔴',d:'+3 kritik',a:{crit:3}},atk:{n:'Savaş Taşı',i:'🟠',d:'+%4 saldırı',a:{atk:4}},def:{n:'Koruyan Taş',i:'🔵',d:'+%4 savunma',a:{def:4}},hp:{n:'Can Taşı',i:'🟢',d:'+40 can',a:{hp:40}}};
+const BIO=[
+  {n:'Ork Dişi',sp:['orc','orcw','archer'],need:5,r:'+%3 hareket hızı',a:{spd:3}},
+  {n:'Kurt Postu',sp:['wolf','iwolf'],need:5,r:'+%4 savunma',a:{def:4}},
+  {n:'Akrep Zehri',sp:['scor','sandskel'],need:6,r:'+%4 saldırı',a:{atk:4}},
+  {n:'Balçık Özü',sp:['slime','islime','pslime'],need:6,r:'+50 can',a:{hp:50}},
+  {n:'Eski Kemik',sp:['skel','iskel','sandskel'],need:7,r:'+3 kritik',a:{crit:3}},
+  {n:'Yarasa Kanadı',sp:['bat','firebat'],need:7,r:'+3 kaçınma',a:{dodge:3}}];
+const SUBS={atk:{n:'Saldırı Yolu',d:'+%12 saldırı, +5 kritik',a:{atk:12,crit:5}},def:{n:'Koruma Yolu',d:'+%15 savunma, +%12 can, +4 kaçınma',a:{def:15,hpP:12,dodge:4}}};
+const SUBN={savasci:{atk:'Bedensel Yol',def:'Zihinsel Yol'},ninja:{atk:'Suikast Yolu',def:'Gölge Yolu'},okcu:{atk:'Nişancı Yolu',def:'Avcı Yolu'},sura:{atk:'Kara Büyü Yolu',def:'Kutsal Yol'},saman:{atk:'Ejderha Yolu',def:'Şifa Yolu'},lykaner:{atk:'Kurt Yolu',def:'Dağ Yolu'}};
+const subN=k=>(SUBN[player.cls]&&SUBN[player.cls][k])||SUBS[k].n;
+function metaBonus(){
+  const t={},add=a=>{for(const k in a)t[k]=(t[k]||0)+a[k];};const m=META();
+  for(let i=0;i<m.bio.st&&i<BIO.length;i++)add(BIO[i].a);
+  if(m.sub&&SUBS[m.sub])add(SUBS[m.sub].a);
+  for(const s of SLOTKEYS){const it=player.equipped[s];if(it&&it.socks)it.socks.forEach(k=>{if(k&&STONES[k])add(STONES[k].a);});}
+  return t;
+}
+{const _rc=recalcStats;recalcStats=function(){_rc();if(!player.cls)return;const b=metaBonus();
+  if(b.spd)player.speed*=1+b.spd/100;if(b.def)player.defPct+=b.def;if(b.atk)player.baseDmg*=1+b.atk/100;
+  if(b.hp)player.maxHp+=b.hp;if(b.hpP)player.maxHp=Math.round(player.maxHp*(1+b.hpP/100));
+  if(b.crit)player.crit=clamp(player.crit+b.crit,0,65);if(b.dodge)player.dodge=clamp(player.dodge+b.dodge,0,30);
+  player.hp=Math.min(player.hp,player.maxHp);updateHUD();};}
+
+// ---- yardımcı: yeni NPC ekle
+function addNpc(o){o.mesh=buildHuman(o.cls,false,{},o.tint);o.mesh.position.set(o.x,0,o.z);o.mesh.rotation.y=Math.atan2(-o.x,-o.z);scene.add(o.mesh);o.label=makeLabel(o.n,'npc');obstacles.push({x:o.x,z:o.z,r:.6});NPCS.push(o);return o;}
+addNpc({id:'bio',n:'Biyolog Kemal',x:0,z:14,tint:0x5a8a3a,cls:'okcu',t:'bio'});
+
+// ---- biyolog + ruh taşı + zaman (kuyruk) için renderNpc eki
+{const _rn2=renderNpc;renderNpc=function(){_rn2();if(!npcCur)return;
+  if(npcCur.t==='bio'){const m=META(),b=m.bio;let h='';
+    if(b.st>=BIO.length)h='<div class="stat"><span>Tüm görevleri bitirdin, usta avcı! Kalıcı bonusların aktif.</span></div>';
+    else{const q=BIO[b.st];h='<div class="stat"><span>Görev '+(b.st+1)+'/'+BIO.length+': <b>'+q.n+'</b> topla</span><span>'+b.have+'/'+q.need+'</span></div><div class="stat" style="display:block;font-size:11px;color:#c9b88a">Bu eşya ilgili canavarlardan düşük ihtimalle düşer. Ödül (kalıcı): '+q.r+'</div>'+btn('biot','📦 Teslim et','',b.have<q.need);}
+    h+='<div class="stat"><b>Kazanılan kalıcı bonuslar</b></div>';for(let i=0;i<Math.min(b.st,BIO.length);i++)h+='<div class="stat"><span>✔ '+BIO[i].n+'</span><span>'+BIO[i].r+'</span></div>';
+    $('npcBody').innerHTML=h;}
+  else if(npcCur.t==='smith'){const m=META(),sel=findItem(smithSel);let h='<div class="stat"><b>💎 Ruh Taşı</b></div>';
+    h+='<div class="stat" style="display:block;font-size:11px">';for(const k in STONES)h+=STONES[k].i+' '+STONES[k].n+' ×'+m.stones[k]+' <span style="color:#9a8a68">('+STONES[k].d+')</span><br>';h+='</div>';
+    h+='<div class="stat"><span>Rastgele taş satın al</span>'+btn('stbuy','400💰','',player.yang<400)+'</div>';
+    if(sel){const sn=sel.sn||0,so=sel.socks||[];
+      h+='<div class="stat"><span>Seçili: '+sel.name+' • Soket '+so.filter(x=>x).length+'/'+sn+'</span>'+btn('sopen','Soket aç ('+(300+sel.lv*30)+'💰)','',sn>=2||player.yang<300+sel.lv*30)+'</div>';
+      if(so.filter(x=>x).length<sn){h+='<div style="display:flex;gap:4px;flex-wrap:wrap">';for(const k in STONES)h+=btn('stput',STONES[k].i+' tak','data-k="'+k+'"',m.stones[k]<1);h+='</div><div class="stat" style="display:block;font-size:10.5px;color:#c9b88a">Takarken %15 ihtimalle taş kırılır. Soket açma %65 başarılı.</div>';}
+      else if(sn>0)h+='<div class="stat"><span>Soketler dolu: '+so.map(k=>STONES[k].i).join(' ')+'</span></div>';}
+    else h+='<div class="stat"><span>Önce yukarıdan bir eşya seç.</span></div>';
+    $('npcBody').innerHTML+=h;}
+};}
+document.body.addEventListener('click',e=>{const t=e.target.closest('[data-act]');if(!t)return;const a=t.dataset.act,m=META();
+  if(a==='biot'){const b=m.bio;if(b.st<BIO.length&&b.have>=BIO[b.st].need){b.have-=BIO[b.st].need;showMsg('🧬 Kalıcı bonus: '+BIO[b.st].r);b.st++;sfx('quest');recalcStats();saveGame();renderNpc();}}
+  else if(a==='stbuy'){if(player.yang>=400){player.yang-=400;const ks=Object.keys(STONES),k=ks[Math.floor(Math.random()*ks.length)];m.stones[k]++;showMsg(STONES[k].i+' '+STONES[k].n);sfx('buy');updateHUD();saveGame();renderNpc();}}
+  else if(a==='sopen'){const s=findItem(smithSel);if(!s)return;const c=300+s.lv*30,sn=s.sn||0;if(sn>=2||player.yang<c)return;player.yang-=c;
+    if(Math.random()<.65){s.sn=sn+1;s.socks=s.socks||[];s.socks.push(null);showMsg('Soket açıldı!');sfx('level');}else{showMsg('Soket açılamadı.');sfx('miss');}updateHUD();saveGame();renderNpc();}
+  else if(a==='stput'){const s=findItem(smithSel),k=t.dataset.k;if(!s||!STONES[k]||m.stones[k]<1)return;s.socks=s.socks||[];if(s.socks.filter(x=>x).length>=(s.sn||0))return;m.stones[k]--;
+    if(Math.random()<.15){showMsg('Taş kırıldı!');sfx('miss');}else{const i=s.socks.indexOf(null);if(i>=0)s.socks[i]=k;else s.socks.push(k);showMsg(STONES[k].i+' takıldı!');sfx('level');recalcStats();}saveGame();renderNpc();}
+});
+
+// ---- ölüm kancası: biyolog eşyası, ruh taşı, KS rakip ödülü
+{const _die=Enemy.prototype.die;Enemy.prototype.die=function(){const spk=this.spk,iM=this.isMetin,iP=this.isPvP,rv=this.rival,pos=this.mesh.position.clone(),dg=this.dg;_die.call(this);
+  if(iM||iP||!player.cls)return;const m=META();
+  if(rv){const y=200+player.level*40;player.yang+=y;dropItem(pos,2,player.level+1);chat('Rakibi alt ettin! +'+y+' Yang','#8f8');return;}
+  if(spk&&m.bio.st<BIO.length&&BIO[m.bio.st].sp.includes(spk)&&Math.random()<.16){m.bio.have++;showMsg('🧬 '+BIO[m.bio.st].n+' ('+m.bio.have+'/'+BIO[m.bio.st].need+')');sfx('pot');}
+  if(!dg&&Math.random()<.012){const ks=Object.keys(STONES),k=ks[Math.floor(Math.random()*ks.length)];m.stones[k]++;showMsg('Düştü: '+STONES[k].i+' '+STONES[k].n);}
+};}
+
+// ---- alt sınıf seçimi (Lv5)
+let subBox=null;
+function subAsk(){if(subBox)return;subBox=document.createElement('div');subBox.style.cssText='position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center';
+  subBox.innerHTML='<div class="panel open" style="position:relative;width:min(92vw,340px);padding:14px;text-align:center"><h3>⚜ YOL SEÇ</h3><div style="font-size:12px;margin-bottom:8px">Seviye 5\'e ulaştın! Bir yol seç (sonradan değişmez):</div>'
+   +Object.keys(SUBS).map(k=>'<button data-sub="'+k+'" style="display:block;width:100%;margin:6px 0;padding:10px">'+subN(k)+'<br><small>'+SUBS[k].d+'</small></button>').join('')+'</div>';
+  subBox.onclick=e=>{const b=e.target.closest('[data-sub]');if(!b)return;META().sub=b.dataset.sub;subBox.remove();subBox=null;recalcStats();saveGame();showMsg('⚜ '+subN(META().sub)+' seçildi!');sfx('level');};
+  document.body.appendChild(subBox);}
+setInterval(()=>{if(player.cls&&player.alive&&player.level>=5&&!META().sub&&!dungeon&&!duel&&!subBox)subAsk();},2000);
+
+// ---- Kombo: yetenekleri sırayla (1→2→3→4) 3 sn içinde kullan
+let comboLast=-1,comboT=0,comboN=0;
+{const _us2=useSkill;useSkill=function(i){const cd0=player.skillCd[i];_us2(i);if(!(cd0<=0&&player.skillCd[i]>0))return;const now=performance.now();
+  if(comboLast>=0&&i===comboLast+1&&now-comboT<3000)comboN++;else comboN=i===0?1:0;comboLast=i;comboT=now;
+  if(comboN>=2){const e=nearestEnemy(10);if(e&&!e.dead){const d=Math.round(player.baseDmg*(.6+.4*comboN));showDamage(e.mesh.position.clone().setY(e.h+1),'KOMBO x'+comboN+'!','#fd4',true);e.stunUntil=performance.now()+1300;spawnBurst(e.mesh.position.clone(),0xffdd44);e.takeDamage(d,true);}}};}
+
+// ---- Şifacı Ork: dostlarını iyileştirir
+SP.orcshaman={n:'Ork Şamanı',b:'orc',pal:[0x3a6a4a,0x1a3a2a,0x0a2014,0x66ffaa],sc:1,hp:.9,dm:.6,sp:3,cd:2.4,rng:10,proj:0x66ffaa,heal:true};
+ZMOBS.forest.push('orcshaman');ZMOBS.swamp.push('orcshaman');
+{const _eu2=Enemy.prototype.update;Enemy.prototype.update=function(dt){_eu2.call(this,dt);
+  if(!this.sp||!this.sp.heal||this.dead||this.state==='idle')return;this.healT=(this.healT||3)-dt;
+  if(this.healT>0)return;this.healT=5;let n=0;
+  for(const o of enemies){if(o===this||o.dead||o.isMetin||o.hp>=o.maxHp)continue;if(Math.hypot(o.mesh.position.x-this.mesh.position.x,o.mesh.position.z-this.mesh.position.z)>9)continue;o.hp=Math.min(o.maxHp,o.hp+o.maxHp*.14);spawnBurst(o.mesh.position.clone(),0x66ffaa);n++;}
+  if(n)showDamage(this.mesh.position.clone().setY(this.h+.6),'✚ İYİLEŞTİRME','#6fa',false);};}
+
+// ---- KS atan rakip avcı: Metin taşına vururken ara sıra gelir
+const RIVN=['Tuğrul','Barış','Kaan','Selçuk','Alp','Deniz','Yiğit','Aras'];
+function rivalSpawn(metin){if(!player.cls||dungeon||duel)return;const p=metin.mesh.position,a=Math.random()*6.28;rivalAt(p.x+Math.cos(a)*16,p.z+Math.sin(a)*16,null,null,'Metin taşını çalmaya geldi!');}
+function rivalAt(x,z,cls,nm,why){
+  if(!player.cls||dungeon||duel)return;
+  const cl=['savasci','ninja','okcu','sura','saman','lykaner'].filter(c=>CLASSES[c]);cls=cls||cl[Math.floor(Math.random()*cl.length)];nm=nm||RIVN[Math.floor(Math.random()*RIVN.length)];
+  const e=new Enemy(new THREE.Vector3(x,0,z),'orcw',Math.max(1,player.level),{});
+  scene.remove(e.mesh);e.mesh=buildHuman(cls,false,{},0x2a5a8a);e.mesh.position.set(x,0,z);scene.add(e.mesh);e.h=2.3;e.sc=1;e.rival=true;e.name='Rakip Avcı '+nm;
+  e.maxHp=Math.round(e.maxHp*1.5);e.hp=e.maxHp;e.provoked=true;e.state='chase';if(e.label){e.label.textContent='⚔ '+e.name+' Lv'+e.lv;}
+  enemies.push(e);showMsg('⚠ '+nm+' '+(why||'saldırıyor!'));chat('Rakip avcı '+nm+' sana saldırıyor!','#fa6');sfx('die');
+}
+{const _td=Enemy.prototype.takeDamage;Enemy.prototype.takeDamage=function(a,c,o){if(this.isMetin&&!this.ksDone&&this.hp>this.maxHp*.5&&Math.random()<.025&&!enemies.some(x=>x.rival&&!x.dead)){this.ksDone=true;rivalSpawn(this);}return _td.call(this,a,c,o);};}
+window.__g9={META,BIO,STONES,SUBS,rivalSpawn,metaBonus,subAsk};
+
+// ---- Şeytan Kulesi (katlı zindan)
+DGS.push({id:'tower',n:'Şeytan Kulesi',min:12,waves:4,per:6,mobs:['orcw','archer','mage','elite','orcshaman'],boss:'boss_sohan',mul:2,fog:0x1a0e22,tower:true});
+{const _sw=spawnWave;spawnWave=function(n){
+  if(!(dungeon&&dungeon.def.tower&&n<=dungeon.def.waves))return _sw(n);
+  const def=dungeon.def;dungeon.wave=n;dungeon.pend=false;const L=Math.max(def.min-2,player.level)+n-1;
+  const mk=(sp,x,z,o)=>{const e=new Enemy(new THREE.Vector3(x,0,z),sp,L,Object.assign({dg:true},o||{}));e.state='chase';enemies.push(e);return e;};
+  const ring=(i,c)=>{const a=i/c*6.28+Math.random();return [DG.x+Math.cos(a)*12,DG.z+Math.sin(a)*12];};
+  const pick=()=>def.mobs[Math.floor(Math.random()*def.mobs.length)];
+  if(n===1){showMsg('KAT 1: Metin taşını kır!');mk(null,DG.x,DG.z-4,{kind:'metin',zone:'forest'});}
+  else if(n===2){showMsg('KAT 2: Tüm canavarları temizle!');for(let i=0;i<def.per+2;i++){const q=ring(i,def.per+2);mk(pick(),q[0],q[1]);}}
+  else if(n===3){showMsg('KAT 3: Bekçileri yen, anahtarları doğru renkli mühürlere götür!');dungeon.pend=true;sealsInit(L,mk,ring,pick);}
+  else{showMsg('KAT 4: Metin ve muhafızlar!');mk(null,DG.x,DG.z-4,{kind:'metin',zone:'desert'});for(let i=0;i<def.per;i++){const q=ring(i,def.per);mk(pick(),q[0],q[1]);}}
+};}
+{const _dk=dungeonKill;dungeonKill=function(b){const tw=dungeon&&!dungeon.done&&dungeon.def.tower;_dk(b);
+  if(tw&&b&&dungeon&&dungeon.done){const w=player.equipped.weapon;if(w&&w.up<UP_MAX){w.up++;recalcStats();showMsg('🔨 Kule Demircisi silahını +'+w.up+' yaptı!');chat('Kule Demircisi: '+w.name+' +'+w.up,'#fd6');}else{player.yang+=2000;chat('Kule Demircisi: +2000 Yang','#fd6');}saveGame();}};}
+
+// ---- Kat 3 mühür mekaniği
+const SEALC=[{n:'Kırmızı',c:0xff3333},{n:'Mavi',c:0x3388ff},{n:'Yeşil',c:0x33dd55}];
+let seals=null;
+function sealsInit(L,mk,ring,pick){
+  sealsClear();const perm=[0,1,2].sort(()=>Math.random()-.5),list=[];
+  for(let i=0;i<3;i++){const q=ring(i,3),e=mk('elite',q[0],q[1]);const sc=SEALC[perm[i]];e.name=sc.n+' Mühür Bekçisi';e.sealKey=perm[i];e.maxHp=Math.round(e.maxHp*1.6);e.hp=e.maxHp;if(e.label)e.label.textContent='🔑 '+e.name+' Lv'+e.lv;}
+  for(let i=0;i<3;i++){const q=ring(i+.5,3);mk(pick(),q[0],q[1]);}
+  for(let i=0;i<3;i++){const a=i/3*6.28+1,x=DG.x+Math.cos(a)*7,z=DG.z+Math.sin(a)*7,gm=new THREE.Group();
+    const col=new THREE.Mesh(new THREE.CylinderGeometry(.35,.5,1.4,8),new THREE.MeshLambertMaterial({color:0x555566})),orb=new THREE.Mesh(new THREE.SphereGeometry(.3,8,8),new THREE.MeshBasicMaterial({color:SEALC[i].c}));orb.position.y=1.7;col.position.y=.7;gm.add(col,orb);gm.position.set(x,0,z);scene.add(gm);list.push({m:gm,orb,x,z,k:i,open:false});}
+  seals={list,keys:new Set()};
+}
+function sealsClear(){if(!seals)return;seals.list.forEach(s=>scene.remove(s.m));seals=null;}
+{const _d3=Enemy.prototype.die;Enemy.prototype.die=function(){const k=this.sealKey;_d3.call(this);if(k!==undefined&&seals){seals.keys.add(k);showMsg('🔑 '+SEALC[k].n+' Anahtar alındı! '+SEALC[k].n+' mühüre götür.');sfx('pot');}};}
+setInterval(()=>{if(!seals)return;if(!dungeon||!dungeon.def.tower||dungeon.wave!==3){sealsClear();return;}
+  const pp=player.group.position;let allOpen=true;
+  for(const s of seals.list){if(!s.open){allOpen=false;if(seals.keys.has(s.k)&&Math.hypot(pp.x-s.x,pp.z-s.z)<3){s.open=true;s.orb.scale.setScalar(2);showMsg('🔓 '+SEALC[s.k].n+' mühür açıldı!');sfx('level');spawnBurst(new THREE.Vector3(s.x,1.7,s.z),SEALC[s.k].c);}
+    else if(!seals.keys.has(s.k)&&Math.hypot(pp.x-s.x,pp.z-s.z)<2.5&&seals.keys.size>0&&!s.hinted){s.hinted=true;showMsg('Bu mühür için '+SEALC[s.k].n+' anahtar gerekir.');}}}
+  if(allOpen&&!enemies.some(e=>e.dg&&!e.dead)){sealsClear();showMsg('Tüm mühürler açıldı! Kat 4...');dungeon.pend=true;setTimeout(()=>{if(dungeon&&!dungeon.done)spawnWave(4);},1500);}
+},400);
+{const _dk2=dungeonKill;dungeonKill=function(b){if(seals&&dungeon&&dungeon.def.tower&&dungeon.wave===3)dungeon.pend=true;return _dk2(b);};}
+
+// ---- Haritada gezen bot avcılar
+const bots=[];const BOTCH=['Metin taşı nerede kaldı?','Kızıl Çöl\'de boss var mı?','+9 basan var mı?','Şeytan Kulesi\'ne grup lazım.','Kutsama kitabı satıyorum!','Bu sunucu çok kalabalık :)','Dün 3 metin kırdım!','At almak için Yang biriktiriyorum.'];
+function botSpawn(){
+  const pp=player.group.position,a=Math.random()*6.28,r=38+Math.random()*22,x=pp.x+Math.cos(a)*r,z=pp.z+Math.sin(a)*r;
+  if(zoneAt(x,z)==='village'||Math.hypot(x,z)>WORLD_R-8)return;
+  const cl=['savasci','ninja','okcu','sura','saman','lykaner'].filter(c=>CLASSES[c]),cls=cl[Math.floor(Math.random()*cl.length)],nm=RIVN[Math.floor(Math.random()*RIVN.length)];
+  const b={n:nm,cls,hostile:Math.random()<.3,x,z,wx:x,wz:z,wt:0,born:Date.now(),greeted:false,ph:Math.random()*9};
+  b.mesh=buildHuman(cls,false,{},b.hostile?0x8a2a2a:0x2a7a5a);b.mesh.position.set(x,0,z);scene.add(b.mesh);
+  b.label=makeLabel((b.hostile?'⚔ ':'🧑 ')+nm+' Lv'+Math.max(1,player.level+Math.floor(Math.random()*5)-2),b.hostile?'me':'npc');bots.push(b);
+}
+function botRemove(b){scene.remove(b.mesh);if(b.label&&b.label.remove)b.label.remove();const i=bots.indexOf(b);if(i>=0)bots.splice(i,1);}
+setInterval(()=>{if(!player.cls||!player.alive||dungeon||duel){bots.slice().forEach(botRemove);return;}
+  const pp=player.group.position;bots.slice().forEach(b=>{if(Date.now()-b.born>300000||Math.hypot(b.x-pp.x,b.z-pp.z)>130)botRemove(b);});
+  if(zoneAt(pp.x,pp.z)!=='village'&&bots.length<3&&Math.random()<.12)botSpawn();
+  if(bots.length&&Math.random()<.05){const b=bots[Math.floor(Math.random()*bots.length)];chat('[Dünya] '+b.n+': '+BOTCH[Math.floor(Math.random()*BOTCH.length)],'#9cf');}
+},1000);
+{const _ub=update;update=function(dt){_ub(dt);if(!bots.length)return;const pp=player.group.position;
+  for(const b of bots.slice()){b.wt-=dt;if(b.wt<=0){b.wt=3+Math.random()*4;const a=Math.random()*6.28,r=6+Math.random()*14;b.wx=b.x+Math.cos(a)*r;b.wz=b.z+Math.sin(a)*r;}
+    const dx=b.wx-b.x,dz=b.wz-b.z,d=Math.hypot(dx,dz);if(d>.5){b.x+=dx/d*3.6*dt;b.z+=dz/d*3.6*dt;b.mesh.rotation.y=Math.atan2(dx,dz);b.ph+=dt*9;}
+    if(zoneAt(b.x,b.z)==='village'){b.x-=dx/(d||1)*4*dt;b.z-=dz/(d||1)*4*dt;}
+    b.mesh.position.set(b.x,d>.5?Math.abs(Math.sin(b.ph))*.08:0,b.z);
+    const pd=Math.hypot(b.x-pp.x,b.z-pp.z);placeLabel(b.label,b.x,2.6,b.z,30,pd);
+    if(pd<13&&!b.greeted){b.greeted=true;if(b.hostile){botRemove(b);rivalAt(b.x,b.z,b.cls,b.n,'sana meydan okuyor!');}else{chat(b.n+': Selam, bol şans!','#9fd');spawnBurst(b.mesh.position.clone(),0x88ffcc);}}}};}
+window.__g9.botSpawn=botSpawn;window.__g9.bots=bots;window.__g9.sealsInfo=()=>seals;
+

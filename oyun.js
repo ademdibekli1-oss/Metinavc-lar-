@@ -428,7 +428,9 @@ function buildRealHorse(){
   const M=MODELS.at&&MODELS.at.Horse;if(!M||!MODELS.SU)return null;
   try{
     const w=new THREE.Group(),inner=MODELS.SU.clone(M.src);
-    inner.traverse(n=>{if(n.isMesh&&n.material){const f=m=>{m=m.clone();if(m.emissive&&m.color)m.emissive.copy(m.color).multiplyScalar(.38);return m;};n.material=Array.isArray(n.material)?n.material.map(f):f(n.material);}});
+    {const hl=(typeof player!=='undefined'&&player.horseLv)||1,body=hl<5?0x9a5f2e:hl<10?0x7d4a26:hl<15?0xd2b070:hl<20?0xe4e4e4:0x2c2c36,dark=hl>=20?0x888899:0x2a1b12,cache=new Map();
+      const re=m=>{if(cache.has(m))return cache.get(m);const lum=m.color?(m.color.r+m.color.g+m.color.b)/3:.5,nm=new THREE.MeshLambertMaterial({color:lum<.04?dark:body});if(m.skinning!==undefined)nm.skinning=true;cache.set(m,nm);return nm;};
+      inner.traverse(n=>{if((n.isMesh||n.isSkinnedMesh)&&n.material)n.material=Array.isArray(n.material)?n.material.map(re):re(n.material);});}
     inner.scale.multiplyScalar(M.sc);inner.position.set(M.off[0],M.off[1],M.off[2]);w.add(inner);
     const mixer=new THREE.AnimationMixer(inner),A={};
     const mk=(n,re)=>{const c=pickClip(M.clips,re);if(c)A[n]=mixer.clipAction(c);};
@@ -452,7 +454,7 @@ function rebuildPlayer(){
   if(hb){player.armPivot=null;player.group.add(hb);}else player.group.add(buildHuman(player.cls,true,player.equipped));horseMesh=buildHorse();player.group.add(horseMesh);paintMount();
   if(!playerLbl)playerLbl=makeLabel(player.name,'me');playerLbl.textContent=player.name;
 }
-function paintMount(){const on=player.mounted&&player.horse;if(horseMesh)horseMesh.visible=!!on;const rh=!!(horseMesh&&horseMesh.userData.horse);player.bodyY=on?(rh?1.12:.85):0;{const b0=player.group.children[0];if(b0&&player.hero)b0.position.z=(on&&rh)?.33:0;}$('mountBtn').style.background=on?'linear-gradient(180deg,#c99a3a,#7a5518)':'';}
+function paintMount(){const on=player.mounted&&player.horse;if(horseMesh)horseMesh.visible=!!on;const rh=!!(horseMesh&&horseMesh.userData.horse);player.bodyY=on?(rh?1.06:.85):0;{const b0=player.group.children[0];if(b0&&player.hero)b0.position.z=(on&&rh)?.33:0;}$('mountBtn').style.background=on?'linear-gradient(180deg,#c99a3a,#7a5518)':'';}
 
 /* =========================================================
    5. DÜŞMANLAR

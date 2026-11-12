@@ -156,7 +156,7 @@ await loadModels();
 const canvas=$('game');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:false,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.setSize(innerWidth,innerHeight);
-const scene=new THREE.Scene(); scene.background=new THREE.Color(0x9fd0ec); scene.fog=new THREE.Fog(0x9fd0ec,45,115);
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x9fd0ec); scene.fog=new THREE.Fog(0x9fd0ec,60,150);
 const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.5,240);
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 scene.add(new THREE.HemisphereLight(0xdcecff,0x5a7a3a,1.05));
@@ -191,7 +191,7 @@ function spawnBurst(pos,color){const mat=new THREE.MeshBasicMaterial({color,tran
    ========================================================= */
 const VR=28, WORLD_R=175, DG={x:800,z:800,r:26};
 const ZONES={
-  village:{n:'Aslan Köyü',fog:0xa6d4f0,rgb:[168,150,110]},
+  village:{n:'Aslan Köyü',fog:0xa6d4f0,rgb:[118,142,78]},
   forest:{n:'Yeşil Orman',lv:[1,8],fog:0x9fd0e8,rgb:[74,150,56]},
   desert:{n:'Kızıl Çöl',lv:[8,16],fog:0xecd6a4,rgb:[222,190,108]},
   snow:{n:'Buzul Vadisi',lv:[16,25],fog:0xe2edf7,rgb:[232,242,248]},
@@ -428,6 +428,7 @@ function buildRealHorse(){
   const M=MODELS.at&&MODELS.at.Horse;if(!M||!MODELS.SU)return null;
   try{
     const w=new THREE.Group(),inner=MODELS.SU.clone(M.src);
+    inner.traverse(n=>{if(n.isMesh&&n.material){const f=m=>{m=m.clone();if(m.emissive&&m.color)m.emissive.copy(m.color).multiplyScalar(.38);return m;};n.material=Array.isArray(n.material)?n.material.map(f):f(n.material);}});
     inner.scale.multiplyScalar(M.sc);inner.position.set(M.off[0],M.off[1],M.off[2]);w.add(inner);
     const mixer=new THREE.AnimationMixer(inner),A={};
     const mk=(n,re)=>{const c=pickClip(M.clips,re);if(c)A[n]=mixer.clipAction(c);};
@@ -828,7 +829,7 @@ function damagePlayer(n,src){
   if(Math.random()*100<player.dodge){showDamage(player.group.position.clone().setY(2.2),'KAÇTI','#9cf',false);return;}
   let df=player.defPct/100;if(player.buffs.def&&performance.now()<player.buffs.def.until)df+=player.buffs.def.value;df=clamp(df,0,.75);
   const dm=Math.max(1,Math.round(n*(1-df)));player.hp-=dm;flashEl.style.opacity=.9;flashTimer=.16;sfx('hurt');showDamage(player.group.position.clone().setY(2.3),dm,'#f66',false);
-  if(player.mounted){player.mounted=false;paintMount();}updateHUD();
+  updateHUD();
   if(player.hp<=0){player.hp=0;player.alive=false;updateHUD();sfx('die');if(duel)duelEnd(false);else showMsg('ÖLDÜN...');setTimeout(respawn,1800);}
 }
 function respawn(){
@@ -1272,7 +1273,7 @@ const camForward=new THREE.Vector3(),camRight=new THREE.Vector3(),moveDir=new TH
 let lastTime=performance.now(),running=false,slowT=0,hudT=0,zoneNow='village',fogTarget=null;
 const infoEl=$('info');
 function setZone(z){zoneNow=z;gfxZone(z);$('zoneName').textContent=ZONES[z].n;fogTarget=new THREE.Color(ZONES[z].fog);
-  if(scene.fog){scene.fog.near=z==='dungeon'?12:45;scene.fog.far=z==='dungeon'?60:115;}if(running)chat('📍 '+ZONES[z].n+(ZONES[z].lv?'  (Lv '+ZONES[z].lv[0]+'–'+ZONES[z].lv[1]+')':''),'#9fd0ff');}
+  if(scene.fog){scene.fog.near=z==='dungeon'?12:60;scene.fog.far=z==='dungeon'?60:150;}if(running)chat('📍 '+ZONES[z].n+(ZONES[z].lv?'  (Lv '+ZONES[z].lv[0]+'–'+ZONES[z].lv[1]+')':''),'#9fd0ff');}
 function boundPos(pos){
   if(dungeon){const dx=pos.x-DG.x,dz=pos.z-DG.z,r=Math.hypot(dx,dz),lim=DG.r-2;if(r>lim){pos.x=DG.x+dx/r*lim;pos.z=DG.z+dz/r*lim;}}
   else{const r=Math.hypot(pos.x,pos.z),lim=WORLD_R-4;if(r>lim){pos.x*=lim/r;pos.z*=lim/r;}}
